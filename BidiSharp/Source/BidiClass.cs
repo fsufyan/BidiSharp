@@ -24,7 +24,7 @@
 
 namespace BidiSharp
 {
-    internal enum BidiClass : byte
+    internal enum BidiClass
     {
         // STRONG TYPES
 
