@@ -26,14 +26,14 @@ namespace BidiSharp
 {
     internal enum BidiClass
     {
-        // STRONG TYPES
-
         L,              // Left-to-Right
+        LRE,            // Left-to-Right Embedding
+        LRO,            // Left-to-Right Override
         R,              // Right-to-Left
         AL,             // Right-to-Left Arabic
-        
-        // WEAK TYPES
-
+        RLE,            // Right-to-Left Embedding
+        RLO,            // Right-to-Left Override
+        PDF,            // Pop Directional Format
         EN,             // European Number
         ES,             // European Number Separator
         ET,             // European Number Terminator
@@ -41,21 +41,10 @@ namespace BidiSharp
         CS,             // Common Number Separator
         NSM,            // Nonspacing Mark
         BN,             // Boundary Neutral
-
-        // NEUTRAL TYPES
-
         B,              // Paragraph Separator
         S,              // Segment Separator
         WS,             // Whitespace
         ON,             // Other Neutrals
-
-        // Explicit Formatting
-        
-        LRE,            // Left-to-Right Embedding
-        LRO,            // Left-to-Right Override
-        RLE,            // Right-to-Left Embedding
-        RLO,            // Right-to-Left Override
-        PDF,            // Pop Directional Format
         LRI,            // Left-to-Right Isolate
         RLI,            // Right-to-left Isolate
         FSI,            // First Strong Isolate

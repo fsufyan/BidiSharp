@@ -57,7 +57,7 @@ namespace BidiSharp
         }
 
         // Entry point for algorithm to return at final correct display order
-        public static string LogicalToVisual(string input)
+        public static string LogicalToVisual(string input, int[] lineBreaks = null)
         {
             // Optimization:
             // Only continue if an RTL character is present
@@ -122,10 +122,11 @@ namespace BidiSharp
             }
 
             // Rules L1-L2
-            int[] orderedLevels = GetReorderedIndexes(baseLevel, typesList, levelsList, new int[] { typesList.Length });
+            var lines = lineBreaks == null ? new int[] { typesList.Length } : lineBreaks;
+            int[] newIndexes = GetReorderedIndexes(baseLevel, typesList, levelsList, lines);
 
             // Return new text from ordered levels
-            var finalStr = GetOrderedString(input, orderedLevels);
+            var finalStr = GetOrderedString(input, newIndexes);
 
             return finalStr;
         }
@@ -939,7 +940,7 @@ namespace BidiSharp
                 int end = lineBreaks[i];
 
                 var tempLevels = new int[end - start];  // Line levels
-                levels.CopyTo(tempLevels, start); // Copy line levels to work on it
+                Array.Copy(levels, start, tempLevels, 0, tempLevels.Length); // Copy line levels to work on it
 
                 var tempReorderedIndexes = ComputeReorderingIndexes(tempLevels); // Rule L2 (reversing)
                 for (int j = 0; j < tempReorderedIndexes.Length; j++)
@@ -1013,12 +1014,12 @@ namespace BidiSharp
         }
 
         // Return final correctly reversed string order
-        private static string GetOrderedString(string input, int[] orderedLevels)
+        private static string GetOrderedString(string input, int[] newIndexes)
         {
             var sb = new StringBuilder(input.Length);
-            for (int i = 0; i < orderedLevels.Length; i++)
+            for (int i = 0; i < newIndexes.Length; i++)
             {
-                sb.Append(input[orderedLevels[i]]);
+                sb.Append(input[newIndexes[i]]);
             }
 
             return sb.ToString();
