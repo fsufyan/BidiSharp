@@ -57,7 +57,7 @@ namespace BidiSharp
         }
 
         // Entry point for algorithm to return at final correct display order
-        public static string LogicalToVisual(string input)
+        public static string LogicalToVisual(string input, int[] lineBreaks = null)
         {
             // Optimization:
             // Only continue if an RTL character is present
@@ -122,6 +122,7 @@ namespace BidiSharp
             }
 
             // Rules L1-L2
+            var lines = lineBreaks == null ? new int[] { typesList.Length } : lineBreaks;
             int[] newIndexes = GetReorderedIndexes(baseLevel, typesList, levelsList, lines);
 
             // Return new text from ordered levels
