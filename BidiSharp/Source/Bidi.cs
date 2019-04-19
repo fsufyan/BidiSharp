@@ -940,7 +940,7 @@ namespace BidiSharp
                 int end = lineBreaks[i];
 
                 var tempLevels = new int[end - start];  // Line levels
-                levels.CopyTo(tempLevels, start); // Copy line levels to work on it
+                Array.Copy(levels, start, tempLevels, 0, tempLevels.Length); // Copy line levels to work on it
 
                 var tempReorderedIndexes = ComputeReorderingIndexes(tempLevels); // Rule L2 (reversing)
                 for (int j = 0; j < tempReorderedIndexes.Length; j++)
