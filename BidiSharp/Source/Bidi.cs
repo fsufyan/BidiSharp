@@ -36,21 +36,22 @@ namespace BidiSharp
 
         private struct DirectionalStatus
         {
-            internal int     paragraphEmbeddingLevel;        // 0 >= value <= MAX_DEPTH
-            internal int     directionalOverrideStatus;      // N, R or L
+            internal byte    paragraphEmbeddingLevel;        // 0 >= value <= MAX_DEPTH
+            internal byte    directionalOverrideStatus;      // N, R or L
             internal bool    directionalIsolateStatus;
         }
 
         private class IsolatingRunSequence
         {
-            public int          level;
-            public BidiClass    sos, eos;
+            public byte         level;
+            public BidiClass    sos;
+            public BidiClass    eos;
             public int          length;
             public int[]        indexes;
-            public int[]        types;
-            public int[]        resolvedLevels;
+            public byte[]       types;
+            public byte[]       resolvedLevels;
 
-            public IsolatingRunSequence(int paragraphEmbeddingLevel, List<int> runIndexList, int[] types, int[] levels)
+            public IsolatingRunSequence(byte paragraphEmbeddingLevel, List<int> runIndexList, byte[] types, byte[] levels)
             {
                 ComputeIsolatingRunSequence(this, paragraphEmbeddingLevel, runIndexList, types, levels);
             }
@@ -62,11 +63,11 @@ namespace BidiSharp
             // Optimization:
             // Only continue if an RTL character is present
             
-            int   inputLength               = input.Length;
-            int[] typesList                 = new int[input.Length];
-            int[] levelsList                = new int[input.Length];
-            int[] matchingPDI;
-            int[] matchingIsolateInitiator;
+            int     inputLength               = input.Length;
+            byte[]  typesList                 = new byte[input.Length];
+            byte[]  levelsList                = new byte[input.Length];
+            int[]   matchingPDI;
+            int[]   matchingIsolateInitiator;
 
             // Analyze text bidi_class types
             ClassifyCharacters(input, ref typesList);
@@ -75,7 +76,7 @@ namespace BidiSharp
             GetMatchingPDI(typesList, out matchingPDI, out matchingIsolateInitiator);
 
             // 3.3.1 Determine paragraph embedding level
-            int baseLevel = GetParagraphEmbeddingLevel(typesList, matchingPDI);
+            byte baseLevel = GetParagraphEmbeddingLevel(typesList, matchingPDI);
 
             // Initialize levelsList to paragraph embedding level
             SetLevels(ref levelsList, baseLevel);
@@ -132,19 +133,19 @@ namespace BidiSharp
         }
 
         // 3.2 Determine Bidi_class of each input character
-        private static void ClassifyCharacters(string text, ref int[] tList)
+        private static void ClassifyCharacters(string text, ref byte[] typesList)
         {
-            tList = new int[text.Length];
+            typesList = new byte[text.Length];
             for (int i = 0; i < text.Length; i++)
             {
-                int chIndex = Convert.ToInt32(text[i]);
-                tList[i] = Bidi_Types.BidiCharTypes[chIndex];
+                int chIndex     = Convert.ToInt32(text[i]);
+                typesList[i]    = Bidi_Types.BidiCharTypes[chIndex];
             }
         }
 
         // Rules P2, P3 Determine paragraph embedding level given types array and optional 
         // start and end index to treat types as a scoped paragraph (useful for rule X5c)
-        private static int GetParagraphEmbeddingLevel(int[] types, int[] matchingPDI, int si = -1, int ei = -1)
+        private static byte GetParagraphEmbeddingLevel(byte[] types, int[] matchingPDI, int si = -1, int ei = -1)
         {
             int start   = si != -1 ? si : 0;
             int end     = ei != -1 ? ei : types.Length;
@@ -157,7 +158,8 @@ namespace BidiSharp
                    cct == BidiClass.AL || 
                    cct == BidiClass.R)
                 {
-                    return cct == BidiClass.L ? 0 : 1;
+                    if(cct == BidiClass.L) return 0;
+                    else return 1;
                 }
                 else if(cct == BidiClass.LRI || 
                         cct == BidiClass.RLI || 
@@ -172,7 +174,7 @@ namespace BidiSharp
         }
 
         // 3.3.2 Determine Explicit Embedding Levels and directions
-        private static void GetExplicitEmbeddingLevels(int level, int[] types, ref int[] levels, int[] matchingPDI, int dir = 0)
+        private static void GetExplicitEmbeddingLevels(byte level, byte[] types, ref byte[] levels, int[] matchingPDI)
         {
             // X1.
             // Directional Status Stack and entry
@@ -192,8 +194,8 @@ namespace BidiSharp
             // X2-X8
             for (int i = 0; i < types.Length; i++)
             {
-                BidiClass cCT = (BidiClass)types[i];
-                switch (cCT)
+                BidiClass cct = (BidiClass)types[i];
+                switch (cct)
                 {
                     case BidiClass.RLE:
                     case BidiClass.RLO:
@@ -203,9 +205,9 @@ namespace BidiSharp
                     case BidiClass.RLI:
                     case BidiClass.FSI:
                     {
-                        int newLevel; // New calculated embedding level
+                        byte newLevel;      // New calculated embedding level
 
-                        bool isIsolate = (cCT == BidiClass.RLI || cCT == BidiClass.LRI);
+                        bool isIsolate = (cct == BidiClass.RLI || cct == BidiClass.LRI);
 
                         // X5a, X5b .1 isolate embedding level
                         if(isIsolate)
@@ -216,21 +218,21 @@ namespace BidiSharp
                         // X5c. Get embedding level of characters between FSI and its matching PDI
                         // FSI = RLI if embedding level is 1, otherwise LRI
 
-                        if(cCT == BidiClass.FSI)
+                        if(cct == BidiClass.FSI)
                         {
-                            int el = GetParagraphEmbeddingLevel(types, matchingPDI, i + 1, matchingPDI[i]);
-                            cCT = el == 1 ? BidiClass.RLI : BidiClass.LRI;
+                            byte el = GetParagraphEmbeddingLevel(types, matchingPDI, i + 1, matchingPDI[i]);
+                            cct = el == 1 ? BidiClass.RLI : BidiClass.LRI;
                         }
 
                         // 1 (RLE RLO RLI, LRE LRO LRI) Compute least odd/even embedding level greater than embedding level
                         //  of last entry on directional status stack
-                        if(cCT == BidiClass.RLE || cCT == BidiClass.RLO || cCT == BidiClass.RLI)
+                        if(cct == BidiClass.RLE || cct == BidiClass.RLO || cct == BidiClass.RLI)
                         {
-                            newLevel = LeastGreaterOdd(dirStatusStack.Peek().paragraphEmbeddingLevel);
+                            newLevel = (byte)LeastGreaterOdd(dirStatusStack.Peek().paragraphEmbeddingLevel);
                         }
                         else
                         {
-                            newLevel = LeastGreaterEven(dirStatusStack.Peek().paragraphEmbeddingLevel);
+                            newLevel = (byte)LeastGreaterEven(dirStatusStack.Peek().paragraphEmbeddingLevel);
                         }
 
                         // 2 New level would be valid(level <= max_depth) and overflow isolate count and
@@ -244,9 +246,9 @@ namespace BidiSharp
                             }
 
                             // Push new entry to stack
-                            int dos = cCT == BidiClass.RLO ? (int)BidiClass.R  // RLO = R directional override status
-                                    : cCT == BidiClass.LRO ? (int)BidiClass.L  // LRO = L directional override status
-                                    : (int)BidiClass.ON;                       // All rest are neutrals
+                            byte dos = cct == BidiClass.RLO ? (byte)BidiClass.R  // RLO = R directional override status
+                                    : cct == BidiClass.LRO ? (byte)BidiClass.L   // LRO = L directional override status
+                                    : (byte)BidiClass.ON;                        // All rest are neutrals
                             dirStatusStack.Push(new DirectionalStatus()
                             {
                                 paragraphEmbeddingLevel = newLevel,
@@ -364,7 +366,7 @@ namespace BidiSharp
                                           prevType == BidiClass.FSI || 
                                           prevType == BidiClass.PDI;
 
-                    sequence.types[i] = isIsolateOrPDI ? (int)BidiClass.ON : (int)prevType;
+                    sequence.types[i] = isIsolateOrPDI ? (byte)BidiClass.ON : (byte)prevType;
                 }
             }
 
@@ -382,7 +384,7 @@ namespace BidiSharp
                         {
                             if (type == BidiClass.AL)
                             {
-                                sequence.types[i] = (int)BidiClass.AN;
+                                sequence.types[i] = (byte)BidiClass.AN;
                                 break;
                             }
                         }
@@ -396,7 +398,7 @@ namespace BidiSharp
             {
                 if ((BidiClass)sequence.types[i] == BidiClass.AL)
                 {
-                    sequence.types[i] = (int)BidiClass.R;
+                    sequence.types[i] = (byte)BidiClass.R;
                 }
             }
 
@@ -411,13 +413,13 @@ namespace BidiSharp
 
                 if (cct == BidiClass.ES && prevType == BidiClass.EN && nextType == BidiClass.EN) // EN ES EN -> EN EN EN
                 {
-                    sequence.types[i] = (int)BidiClass.EN;
+                    sequence.types[i] = (byte)BidiClass.EN;
                 }
                 else if (cct == BidiClass.CS && (
                 prevType == BidiClass.EN && nextType == BidiClass.EN ||
                 prevType == BidiClass.AN && nextType == BidiClass.AN))      // EN CS EN -> EN EN EN, AN CS AN -> AN AN AN
                 {
-                    sequence.types[i] = (int)prevType;
+                    sequence.types[i] = (byte)prevType;
                 }
             }
 
@@ -454,7 +456,7 @@ namespace BidiSharp
                 var t = (BidiClass)sequence.types[i];
                 if (t == BidiClass.ET || t == BidiClass.ES || t == BidiClass.CS)
                 {
-                    sequence.types[i] = (int)BidiClass.ON;
+                    sequence.types[i] = (byte)BidiClass.ON;
                 }
             }
 
@@ -475,7 +477,7 @@ namespace BidiSharp
 
                         if (prevStrong == BidiClass.L)
                         {
-                            sequence.types[i] = (int)BidiClass.L;
+                            sequence.types[i] = (byte)BidiClass.L;
                         }
                     }
                 }
@@ -560,10 +562,10 @@ namespace BidiSharp
         // 3.3.5 Resolve Implicit Embedding Levels
         private static void ResolveImplicit(this IsolatingRunSequence sequence)
         {
-            int level = sequence.level;
+            byte level = sequence.level;
 
             // Initialize the sequence resolved levels with sequence embedding level
-            sequence.resolvedLevels = new int[sequence.length];
+            sequence.resolvedLevels = new byte[sequence.length];
             SetLevels(ref sequence.resolvedLevels, sequence.level);
 
             for (int i = 0; i < sequence.length; i++)
@@ -595,7 +597,7 @@ namespace BidiSharp
             }
         }
 
-        private static void ApplyTypesAndLevels(this IsolatingRunSequence sequence, ref int[] typesList, ref int[] levelsList)
+        private static void ApplyTypesAndLevels(this IsolatingRunSequence sequence, ref byte[] typesList, ref byte[] levelsList)
         {
             for (int i = 0; i < sequence.length; i++)
             {
@@ -607,7 +609,7 @@ namespace BidiSharp
 
         // Entry for Rules L1-L2
         // Return the final ordered levels array including the line breaks
-        private static int[] GetReorderedIndexes(int level, int[] typesList, int[] levelsList, int[] lineBreaks)
+        private static int[] GetReorderedIndexes(byte level, byte[] typesList, byte[] levelsList, int[] lineBreaks)
         {
             var levels = GetTextLevels(level, typesList, levelsList, lineBreaks);
             
@@ -616,7 +618,7 @@ namespace BidiSharp
             return multilineLevels;
         }
 
-        private static void GetMatchingPDI(int[] types, out int[] outMatchingPDI, out int[] outMatchingIsolateInitiator)
+        private static void GetMatchingPDI(byte[] types, out int[] outMatchingPDI, out int[] outMatchingIsolateInitiator)
         {
             int[] matchingPDI = new int[types.Length];
             int[] matchingIsolateInitiator = new int[types.Length];
@@ -673,7 +675,7 @@ namespace BidiSharp
             outMatchingIsolateInitiator = matchingIsolateInitiator;
         }
 
-        private static void RemoveX9Characters(ref int[] buffer)
+        private static void RemoveX9Characters(ref byte[] buffer)
         {
             // Todo: ZWJ and ZWNJ characters exception from BN overriding
 
@@ -684,17 +686,17 @@ namespace BidiSharp
                 if(ct == BidiClass.LRE || ct == BidiClass.RLE ||
                    ct == BidiClass.LRO || ct == BidiClass.RLO)
                 {
-                    buffer[i] = (int)BidiClass.BN;
+                    buffer[i] = (byte)BidiClass.BN;
                 }
             }
         }
 
-        private static List<List<int>> GetLevelRuns(int[] levels)
+        private static List<List<int>> GetLevelRuns(byte[] levels)
         {
             List<int>       runList         = new List<int>();
             List<List<int>> allRunsList     = new List<List<int>>();
 
-            int currentLevel = -1;
+            sbyte currentLevel = -1;
             for (int i = 0; i < levels.Length; i++)
             {
                 if(levels[i] != currentLevel)        // New run
@@ -705,7 +707,7 @@ namespace BidiSharp
                         runList.Clear();
                     }
 
-                    currentLevel = levels[i];       // New run level
+                    currentLevel = (sbyte)levels[i];       // New run level
                 }
 
                 runList.Add(i);
@@ -736,7 +738,7 @@ namespace BidiSharp
             return runCharsArray;
         }
 
-        private static List<IsolatingRunSequence> GetIsolatingRunSequences(int pLevel, int[] types, int[] levels, 
+        private static List<IsolatingRunSequence> GetIsolatingRunSequences(byte pLevel, byte[] types, byte[] levels, 
         List<List<int>> levelRuns, int[] matchingIsolateInitiator, int[] matchingPDI, int[] runCharsArray)
         {
             List<IsolatingRunSequence> allRunSequences = new List<IsolatingRunSequence>(levelRuns.Count);
@@ -773,21 +775,21 @@ namespace BidiSharp
 
         // X10 bullet 2 Determine start and end of sequence types (R or L) for an isolating run sequence
         // using run sequence indexes
-        private static void ComputeIsolatingRunSequence(this IsolatingRunSequence sequence, int pLevel, List<int> indexList, 
-        int[] typesList, int[] levels)
+        private static void ComputeIsolatingRunSequence(this IsolatingRunSequence sequence, byte pLevel, List<int> indexList, 
+        byte[] typesList, byte[] levels)
         {
             sequence.length = indexList.Count;
             sequence.indexes = indexList.ToArray();                     // Indexes of run in original text
             
             // Character types of run sequence
-            sequence.types = new int[indexList.Count];
+            sequence.types = new byte[indexList.Count];
             for (int i = 0; i < sequence.length; i++)
             {
                 sequence.types[i] = typesList[indexList[i]];
             }
 
             // sos
-            var firstLevel = levels[indexList[0]];                      // level of first character
+            var firstLevel = levels[indexList[0]];      // level of first character
             sequence.level = firstLevel;
             var previous = indexList[0] - 1;
             var prevLevel = previous >= 0 ? levels[previous] : pLevel;
@@ -803,7 +805,7 @@ namespace BidiSharp
         }
 
         // Override levels list with new level value
-        private static void SetLevels(ref int[] levels, int newLevel)
+        private static void SetLevels(ref byte[] levels, byte newLevel)
         {
             for (int i = 0; i < levels.Length; i++)
             {
@@ -839,7 +841,7 @@ namespace BidiSharp
         {
             for (int i = start; i < limit; i++)
             {
-                sequence.types[i] = (int)newType;
+                sequence.types[i] = (byte)newType;
             }
         }
 
@@ -857,18 +859,18 @@ namespace BidiSharp
 
         private static bool IsOdd(int n)
         {
-            return n % 2 != 0;
+            return (n & 1) != 0;
         }
 
         // Return L if level is even and R if Odd
-        private static BidiClass GetTypeForLevel(int level)
+        private static BidiClass GetTypeForLevel(byte level)
         {
-            return level % 2 == 0 ? BidiClass.L : BidiClass.R;
+            return (level & 2) == 0 ? BidiClass.L : BidiClass.R;
         }
 
-        private static int[] GetTextLevels(int paragraphEmbeddingLevel, int[] typesList, int[] levelsList, int[] lineBreaks)
+        private static byte[] GetTextLevels(byte paragraphEmbeddingLevel, byte[] typesList, byte[] levelsList, int[] lineBreaks)
         {
-            int[] finalLevels = levelsList;
+            byte[] finalLevels = levelsList;
 
             // Rule L1
             // Level of S and B is changed to the paragraph embedding level.
@@ -929,7 +931,7 @@ namespace BidiSharp
         
         // Compute correct text indexes using levels array and line breaks positions.
         // Line breaks should be calculated and supplied by the rendering system after shaping and bounds calculations
-        private static int[] GetMultiLineReordered(int[] levels, int[] lineBreaks)
+        private static int[] GetMultiLineReordered(byte[] levels, int[] lineBreaks)
         {
             int[] resultIndexes = new int[levels.Length];
 
@@ -939,7 +941,7 @@ namespace BidiSharp
             {
                 int end = lineBreaks[i];
 
-                var tempLevels = new int[end - start];  // Line levels
+                var tempLevels = new byte[end - start];  // Line levels
                 Array.Copy(levels, start, tempLevels, 0, tempLevels.Length); // Copy line levels to work on it
 
                 var tempReorderedIndexes = ComputeReorderingIndexes(tempLevels); // Rule L2 (reversing)
@@ -955,7 +957,7 @@ namespace BidiSharp
         }
 
         // Rule L2
-        private static int[] ComputeReorderingIndexes(int[] levels)
+        private static int[] ComputeReorderingIndexes(byte[] levels)
         {
             int lineLength = levels.Length;
 
@@ -968,8 +970,8 @@ namespace BidiSharp
 
             // Determine highest level on the text
             // scan for highest level and lowest odd level
-            int highestLevel    = 0;
-            int lowestOddLevel  = MAX_DEPTH + 2; // max value for odd levels
+            byte highestLevel    = 0;
+            byte lowestOddLevel  = MAX_DEPTH + 2; // max value for odd levels
             foreach (var level in levels)
             {
                 if (level > highestLevel) // highest level
