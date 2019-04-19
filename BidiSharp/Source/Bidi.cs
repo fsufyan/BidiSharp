@@ -122,10 +122,10 @@ namespace BidiSharp
             }
 
             // Rules L1-L2
-            int[] orderedLevels = GetReorderedIndexes(baseLevel, typesList, levelsList, new int[] { typesList.Length });
+            int[] newIndexes = GetReorderedIndexes(baseLevel, typesList, levelsList, lines);
 
             // Return new text from ordered levels
-            var finalStr = GetOrderedString(input, orderedLevels);
+            var finalStr = GetOrderedString(input, newIndexes);
 
             return finalStr;
         }
@@ -1013,12 +1013,12 @@ namespace BidiSharp
         }
 
         // Return final correctly reversed string order
-        private static string GetOrderedString(string input, int[] orderedLevels)
+        private static string GetOrderedString(string input, int[] newIndexes)
         {
             var sb = new StringBuilder(input.Length);
-            for (int i = 0; i < orderedLevels.Length; i++)
+            for (int i = 0; i < newIndexes.Length; i++)
             {
-                sb.Append(input[orderedLevels[i]]);
+                sb.Append(input[newIndexes[i]]);
             }
 
             return sb.ToString();
