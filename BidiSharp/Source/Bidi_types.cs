@@ -26,7 +26,7 @@ namespace BidiSharp
 {
 	internal static class Bidi_Types
 	{
-		internal static int[] BidiCharTypes = new int[0xffff]
+		internal static byte[] BidiCharTypes = new byte[0xffff]
 		{
 			14, 14, 14, 14, 14, 14, 14, 14, 14, 16, 15, 16, 17, 15, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 
 			14, 14, 14, 15, 15, 15, 16, 17, 18, 18, 10, 10, 10, 18, 18, 18, 18, 18, 9, 12, 9, 12, 12, 8, 8, 

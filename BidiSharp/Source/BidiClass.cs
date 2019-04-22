@@ -24,7 +24,7 @@
 
 namespace BidiSharp
 {
-    internal enum BidiClass
+    internal enum BidiClass : byte
     {
         L,              // Left-to-Right
         LRE,            // Left-to-Right Embedding
