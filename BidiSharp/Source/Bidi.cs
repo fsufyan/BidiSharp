@@ -865,7 +865,7 @@ namespace BidiSharp
         // Return L if level is even and R if Odd
         private static BidiClass GetTypeForLevel(byte level)
         {
-            return (level & 2) == 0 ? BidiClass.L : BidiClass.R;
+            return (level & 1) == 0 ? BidiClass.L : BidiClass.R;
         }
 
         private static byte[] GetTextLevels(byte paragraphEmbeddingLevel, byte[] typesList, byte[] levelsList, int[] lineBreaks)
