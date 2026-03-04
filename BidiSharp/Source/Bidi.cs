@@ -50,19 +50,32 @@ namespace BidiSharp
             public int[]        indexes;
             public byte[]       types;
             public byte[]       resolvedLevels;
+            public string       text;       // Reference to original input text (for bracket lookup)
 
-            public IsolatingRunSequence(byte paragraphEmbeddingLevel, List<int> runIndexList, byte[] types, byte[] levels)
+            public IsolatingRunSequence(byte paragraphEmbeddingLevel, List<int> runIndexList, byte[] types, byte[] levels, string text)
             {
+                this.text = text;
                 ComputeIsolatingRunSequence(this, paragraphEmbeddingLevel, runIndexList, types, levels);
             }
+        }
+
+        internal struct BidiResult
+        {
+            public string VisualText;
+            public byte[] ResolvedLevels;
+            public int[] ReorderIndexes;
+            public byte ParagraphEmbeddingLevel;
         }
 
         // Entry point for algorithm to return at final correct display order
         public static string LogicalToVisual(string input, int[] lineBreaks = null)
         {
-            // Optimization:
-            // Only continue if an RTL character is present
-            
+            return ResolveAndReorder(input, lineBreaks).VisualText;
+        }
+
+        // Internal entry point exposing full algorithm results for testing
+        internal static BidiResult ResolveAndReorder(string input, int[] lineBreaks = null)
+        {
             int     inputLength               = input.Length;
             byte[]  typesList                 = new byte[input.Length];
             byte[]  levelsList                = new byte[input.Length];
@@ -89,11 +102,11 @@ namespace BidiSharp
             ** 3.3.3,  3.3.4,  3.3.5,  3.3.6
             ** X9,X10  W1-W7   N0-N2   I1-I2
             */
-            
+
             // X9 Remove all RLE, LRE, RLO, LRO, PDF and BN characters
-            // Instead of removing, assign the embedding level to each formatting 
+            // Instead of removing, assign the embedding level to each formatting
             // character and turn it (type or level?) to BN.
-            // The goal in marking a formatting or control character as BN is that it 
+            // The goal in marking a formatting or control character as BN is that it
             // has no effect on the rest of the algorithm (ZWJ and ZWNJ are exceptions).
             RemoveX9Characters(ref typesList);
 
@@ -106,7 +119,7 @@ namespace BidiSharp
             int[] runCharsArray = GetRunForCharacter(levelRuns, inputLength);
 
             var sequences = GetIsolatingRunSequences(baseLevel, typesList, levelsList, levelRuns, matchingIsolateInitiator,
-                                                     matchingPDI, runCharsArray);
+                                                     matchingPDI, runCharsArray, input);
 
             foreach (var sequence in sequences)
             {
@@ -129,7 +142,13 @@ namespace BidiSharp
             // Return new text from ordered levels
             var finalStr = GetOrderedString(input, newIndexes);
 
-            return finalStr;
+            return new BidiResult
+            {
+                VisualText = finalStr,
+                ResolvedLevels = levelsList,
+                ReorderIndexes = newIndexes,
+                ParagraphEmbeddingLevel = baseLevel
+            };
         }
 
         // 3.2 Determine Bidi_class of each input character
@@ -461,6 +480,7 @@ namespace BidiSharp
             }
 
             // W7 same as W2 but EN -> L
+            // Search backward for nearest strong type; if L, change EN to L
             for (int i = 0; i < sequence.length; i++)
             {
                 if((BidiClass)sequence.types[i] == BidiClass.EN)
@@ -474,15 +494,158 @@ namespace BidiSharp
                             prevStrong = t;
                             break;
                         }
+                    }
 
-                        if (prevStrong == BidiClass.L)
+                    if (prevStrong == BidiClass.L)
+                    {
+                        sequence.types[i] = (byte)BidiClass.L;
+                    }
+                }
+            }
+
+        }
+
+        // N0: Paired Brackets Algorithm (BD16)
+        // Resolves bracket pairs within an isolating run sequence so that both
+        // the opening and closing bracket resolve to the same direction.
+        private static void ResolveBrackets(this IsolatingRunSequence sequence)
+        {
+            BidiClass embeddingDirection = GetTypeForLevel(sequence.level);
+
+            // BD16: Identify bracket pairs
+            // Use a stack (max 63 entries per spec) to match opening and closing brackets
+            const int MAX_BRACKET_STACK = 63;
+            var stack = new List<(int seqIndex, int codepoint)>(MAX_BRACKET_STACK);
+            var pairs = new List<(int openIndex, int closeIndex)>();
+
+            for (int i = 0; i < sequence.length; i++)
+            {
+                var type = (BidiClass)sequence.types[i];
+
+                // Only consider ON (Other Neutral) characters as potential brackets
+                if (type != BidiClass.ON)
+                    continue;
+
+                int textIndex = sequence.indexes[i];
+                int cp = (int)sequence.text[textIndex];
+
+                // Check if this character is a bracket
+                BidiBrackets.BracketInfo bracketInfo;
+                if (!BidiBrackets.Data.TryGetValue(cp, out bracketInfo))
+                {
+                    // Check canonical equivalent
+                    int canonical = BidiBrackets.GetCanonicalEquivalent(cp);
+                    if (canonical < 0 || !BidiBrackets.Data.TryGetValue(canonical, out bracketInfo))
+                        continue;
+                }
+
+                if (bracketInfo.isOpen)
+                {
+                    // Opening bracket
+                    if (stack.Count >= MAX_BRACKET_STACK)
+                        break; // Stack overflow — stop processing brackets
+
+                    stack.Add((i, cp));
+                }
+                else
+                {
+                    // Closing bracket — search stack from top for matching open
+                    int pairedOpen = bracketInfo.pairedChar;
+                    int canonicalPairedOpen = BidiBrackets.GetCanonicalEquivalent(pairedOpen);
+
+                    for (int si = stack.Count - 1; si >= 0; si--)
+                    {
+                        int stackCp = stack[si].codepoint;
+                        if (stackCp == pairedOpen ||
+                            (canonicalPairedOpen >= 0 && stackCp == canonicalPairedOpen))
                         {
-                            sequence.types[i] = (byte)BidiClass.L;
+                            // Found matching open bracket
+                            pairs.Add((stack[si].seqIndex, i));
+
+                            // Pop this entry and all above it
+                            stack.RemoveRange(si, stack.Count - si);
+                            break;
                         }
                     }
                 }
             }
 
+            // Sort pairs by opening position
+            pairs.Sort((a, b) => a.openIndex.CompareTo(b.openIndex));
+
+            // Resolve each bracket pair
+            foreach (var pair in pairs)
+            {
+                // Determine the strong type enclosed within the bracket pair
+                BidiClass innerStrongType = BidiClass.ON; // no strong type found
+
+                for (int i = pair.openIndex + 1; i < pair.closeIndex; i++)
+                {
+                    var t = (BidiClass)sequence.types[i];
+                    // For N0, AN and EN are treated as R
+                    if (t == BidiClass.AN || t == BidiClass.EN)
+                        t = BidiClass.R;
+
+                    if (t == BidiClass.R || t == BidiClass.L)
+                    {
+                        innerStrongType = t;
+                        // If we find the embedding direction, that takes priority (N0b)
+                        if (t == embeddingDirection)
+                            break;
+                    }
+                }
+
+                if (innerStrongType == BidiClass.ON)
+                    continue; // N0c: No strong type found, leave brackets as-is
+
+                BidiClass bracketType;
+
+                if (innerStrongType == embeddingDirection)
+                {
+                    // N0b: Strong type matches embedding direction
+                    bracketType = embeddingDirection;
+                }
+                else
+                {
+                    // N0c: Strong type is opposite to embedding direction
+                    // Look at context: preceding strong type or sos
+                    BidiClass context = sequence.sos;
+                    for (int i = pair.openIndex - 1; i >= 0; i--)
+                    {
+                        var t = (BidiClass)sequence.types[i];
+                        if (t == BidiClass.AN || t == BidiClass.EN)
+                            t = BidiClass.R;
+
+                        if (t == BidiClass.R || t == BidiClass.L)
+                        {
+                            context = t;
+                            break;
+                        }
+                    }
+
+                    bracketType = (context == innerStrongType) ? innerStrongType : embeddingDirection;
+                }
+
+                // Set the bracket pair to the resolved type
+                sequence.types[pair.openIndex] = (byte)bracketType;
+                sequence.types[pair.closeIndex] = (byte)bracketType;
+
+                // Also resolve any NSMs following the brackets to the same type
+                for (int i = pair.openIndex + 1; i < sequence.length; i++)
+                {
+                    if ((BidiClass)sequence.types[i] == BidiClass.NSM)
+                        sequence.types[i] = (byte)bracketType;
+                    else
+                        break;
+                }
+                for (int i = pair.closeIndex + 1; i < sequence.length; i++)
+                {
+                    if ((BidiClass)sequence.types[i] == BidiClass.NSM)
+                        sequence.types[i] = (byte)bracketType;
+                    else
+                        break;
+                }
+            }
         }
 
         // 3.3.4 Resolve Neutral Types
@@ -490,7 +653,8 @@ namespace BidiSharp
         private static void ResolveNeutrals(this IsolatingRunSequence sequence)
         {
 
-            // TODO: N0 rule (Paired Brackets algorithm)
+            // N0: Paired Brackets Algorithm (BD16)
+            sequence.ResolveBrackets();
 
             // N1
             // Sequence of NIs will resolve to surrounding "strong" type if text on both sides was of same direction.
@@ -677,14 +841,14 @@ namespace BidiSharp
 
         private static void RemoveX9Characters(ref byte[] buffer)
         {
-            // Todo: ZWJ and ZWNJ characters exception from BN overriding
-
-            // Replace Embedding and override type with BN
+            // Replace Embedding, override, and PDF types with BN
+            // Exception: ZWJ (U+200D) and ZWNJ (U+200C) should NOT be converted to BN
             for (int i = 0; i < buffer.Length; i++)
             {
                 var ct = (BidiClass)buffer[i];
                 if(ct == BidiClass.LRE || ct == BidiClass.RLE ||
-                   ct == BidiClass.LRO || ct == BidiClass.RLO)
+                   ct == BidiClass.LRO || ct == BidiClass.RLO ||
+                   ct == BidiClass.PDF)
                 {
                     buffer[i] = (byte)BidiClass.BN;
                 }
@@ -704,7 +868,7 @@ namespace BidiSharp
                     if(currentLevel >= 0)           // Assign last run
                     {
                         allRunsList.Add(runList);
-                        runList.Clear();
+                        runList = new List<int>();
                     }
 
                     currentLevel = (sbyte)levels[i];       // New run level
@@ -738,8 +902,8 @@ namespace BidiSharp
             return runCharsArray;
         }
 
-        private static List<IsolatingRunSequence> GetIsolatingRunSequences(byte pLevel, byte[] types, byte[] levels, 
-        List<List<int>> levelRuns, int[] matchingIsolateInitiator, int[] matchingPDI, int[] runCharsArray)
+        private static List<IsolatingRunSequence> GetIsolatingRunSequences(byte pLevel, byte[] types, byte[] levels,
+        List<List<int>> levelRuns, int[] matchingIsolateInitiator, int[] matchingPDI, int[] runCharsArray, string text)
         {
             List<IsolatingRunSequence> allRunSequences = new List<IsolatingRunSequence>(levelRuns.Count);
 
@@ -766,7 +930,7 @@ namespace BidiSharp
                         currRunSequence.AddRange(newRun);
                     }
 
-                    allRunSequences.Add(new IsolatingRunSequence(pLevel, currRunSequence, types, levels));
+                    allRunSequences.Add(new IsolatingRunSequence(pLevel, currRunSequence, types, levels, text));
                 }
             }
 
@@ -873,7 +1037,7 @@ namespace BidiSharp
             byte[] finalLevels = levelsList;
 
             // Rule L1
-            // Level of S and B is changed to the paragraph embedding level.
+            // L1.1-L1.3: Level of S and B is changed to the paragraph embedding level.
             // Any sequence of whitespace and/or isolate formatting characters preceding S, B are changed to paragraph level
             for (int i = 0; i < finalLevels.Length; i++)
             {
@@ -882,27 +1046,28 @@ namespace BidiSharp
                 if (t == BidiClass.S || t == BidiClass.B)
                 {
                     finalLevels[i] = paragraphEmbeddingLevel;
-                }
 
-                // Search backward for whitespace or isolates (LRI, RLI, FSI, PDI)
-                for (int j = i - 1; j >= 0; j--)
-                {
-                    t = (BidiClass)typesList[j];
-                    if (t == BidiClass.LRI ||
-                        t == BidiClass.RLI ||
-                        t == BidiClass.FSI ||
-                        t == BidiClass.FSI)
+                    // Search backward for preceding WS/isolate sequence
+                    for (int j = i - 1; j >= 0; j--)
                     {
-                        finalLevels[j] = paragraphEmbeddingLevel;
-                    }
-                    else
-                    {
-                        break;
+                        t = (BidiClass)typesList[j];
+                        if (t == BidiClass.WS  ||
+                            t == BidiClass.LRI ||
+                            t == BidiClass.RLI ||
+                            t == BidiClass.FSI ||
+                            t == BidiClass.PDI)
+                        {
+                            finalLevels[j] = paragraphEmbeddingLevel;
+                        }
+                        else
+                        {
+                            break;
+                        }
                     }
                 }
             }
 
-            // Search backward for any sequence of whitespace or isolates at ach line breaks (ends)
+            // L1.4: Search backward for any sequence of whitespace or isolates at each line break (end)
             int start = 0;
             for (int i = 0; i < lineBreaks.Length; i++)
             {
@@ -910,10 +1075,11 @@ namespace BidiSharp
                 for (int j = end - 1; j >= start; j--)
                 {
                     var t = (BidiClass)typesList[j];
-                    if (t == BidiClass.LRI ||
+                    if (t == BidiClass.WS  ||
+                        t == BidiClass.LRI ||
                         t == BidiClass.RLI ||
                         t == BidiClass.FSI ||
-                        t == BidiClass.FSI)
+                        t == BidiClass.PDI)
                     {
                         finalLevels[j] = paragraphEmbeddingLevel;
                     }
