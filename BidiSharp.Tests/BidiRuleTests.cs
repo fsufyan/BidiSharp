@@ -331,6 +331,44 @@ namespace BidiSharp.Tests
 
         #endregion
 
+        #region Supplementary Plane Characters
+
+        [Fact]
+        public void SupplementaryPlane_CypriotRTL_Reordered()
+        {
+            // Cypriot syllabary U+10800 is RTL
+            string cypriotA = char.ConvertFromUtf32(0x10800);
+            string cypriotB = char.ConvertFromUtf32(0x10801);
+            string input = $"A{cypriotA}{cypriotB}B";
+            string result = V(input);
+            // Should not crash; length preserved (cypriot chars are surrogate pairs = 2 chars each)
+            Assert.Equal(input.Length, result.Length);
+            // Cypriot chars should be reordered (they're RTL)
+            Assert.True(result.IndexOf(cypriotB, StringComparison.Ordinal) < result.IndexOf(cypriotA, StringComparison.Ordinal),
+                "RTL supplementary characters should be reversed in visual order");
+        }
+
+        [Fact]
+        public void SupplementaryPlane_ArabicMath_RTL()
+        {
+            // Arabic Mathematical Symbols U+1EE00 are AL (RTL)
+            string arabicMath = char.ConvertFromUtf32(0x1EE00);
+            string input = $"X{arabicMath}Y";
+            string result = V(input);
+            Assert.Equal(input.Length, result.Length);
+        }
+
+        [Fact]
+        public void SupplementaryPlane_Emoji_LTR()
+        {
+            // Most emoji are ON (neutral), should not affect LTR flow
+            string emoji = char.ConvertFromUtf32(0x1F600); // Grinning face
+            string input = $"Hello {emoji} world";
+            string result = V(input);
+            Assert.Equal(input, result); // Should stay LTR
+        }
+
+        #endregion
         #region Known Bug Exposure Tests
 
         [Fact]
