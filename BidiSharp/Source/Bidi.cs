@@ -68,28 +68,38 @@ namespace BidiSharp
         }
 
         // Entry point for algorithm to return at final correct display order
-        public static string LogicalToVisual(string input, int[] lineBreaks = null)
+        // paragraphDirection: 0=LTR, 1=RTL, 2=auto-detect (default)
+        public static string LogicalToVisual(string input, int[] lineBreaks = null, int paragraphDirection = 2)
         {
-            return ResolveAndReorder(input, lineBreaks).VisualText;
+            return ResolveAndReorder(input, lineBreaks, paragraphDirection).VisualText;
         }
 
         // Internal entry point exposing full algorithm results for testing
-        internal static BidiResult ResolveAndReorder(string input, int[] lineBreaks = null)
+        // paragraphDirection: 0=LTR, 1=RTL, 2=auto-detect (default)
+        internal static BidiResult ResolveAndReorder(string input, int[] lineBreaks = null, int paragraphDirection = 2)
         {
-            int     inputLength               = input.Length;
-            byte[]  typesList                 = new byte[input.Length];
-            byte[]  levelsList                = new byte[input.Length];
+            byte[]  typesList = null;
             int[]   matchingPDI;
             int[]   matchingIsolateInitiator;
+            int[]   codePointMap;
 
-            // Analyze text bidi_class types
-            ClassifyCharacters(input, ref typesList);
+            // Analyze text bidi_class types (handles surrogate pairs)
+            ClassifyCharacters(input, ref typesList, out codePointMap);
+
+            int cpLength = typesList.Length;
+            byte[] levelsList = new byte[cpLength];
 
             // Determine Matching PDI
             GetMatchingPDI(typesList, out matchingPDI, out matchingIsolateInitiator);
 
             // 3.3.1 Determine paragraph embedding level
-            byte baseLevel = GetParagraphEmbeddingLevel(typesList, matchingPDI);
+            byte baseLevel;
+            if (paragraphDirection == 0)
+                baseLevel = 0; // Explicit LTR
+            else if (paragraphDirection == 1)
+                baseLevel = 1; // Explicit RTL
+            else
+                baseLevel = GetParagraphEmbeddingLevel(typesList, matchingPDI); // Auto-detect
 
             // Initialize levelsList to paragraph embedding level
             SetLevels(ref levelsList, baseLevel);
@@ -104,43 +114,31 @@ namespace BidiSharp
             */
 
             // X9 Remove all RLE, LRE, RLO, LRO, PDF and BN characters
-            // Instead of removing, assign the embedding level to each formatting
-            // character and turn it (type or level?) to BN.
-            // The goal in marking a formatting or control character as BN is that it
-            // has no effect on the rest of the algorithm (ZWJ and ZWNJ are exceptions).
             RemoveX9Characters(ref typesList);
 
             // X10 steps
-            // .1 Compute isolating run sequences according to BD13. Apply next rules to each sequence
             var levelRuns = GetLevelRuns(levelsList);
             int nRuns = levelRuns.Count;
 
-            // Determine each character belongs to what run
-            int[] runCharsArray = GetRunForCharacter(levelRuns, inputLength);
+            int[] runCharsArray = GetRunForCharacter(levelRuns, cpLength);
 
             var sequences = GetIsolatingRunSequences(baseLevel, typesList, levelsList, levelRuns, matchingIsolateInitiator,
                                                      matchingPDI, runCharsArray, input);
 
             foreach (var sequence in sequences)
             {
-                // Rules W1-W7
                 sequence.ResolveWeaks();
-
-                // Rules N0-N2
                 sequence.ResolveNeutrals();
-
-                // Rules I1-I2
                 sequence.ResolveImplicit();
-
                 sequence.ApplyTypesAndLevels(ref typesList, ref levelsList);
             }
 
             // Rules L1-L2
-            var lines = lineBreaks == null ? new int[] { typesList.Length } : lineBreaks;
+            var lines = lineBreaks == null ? new int[] { cpLength } : lineBreaks;
             int[] newIndexes = GetReorderedIndexes(baseLevel, typesList, levelsList, lines);
 
-            // Return new text from ordered levels
-            var finalStr = GetOrderedString(input, newIndexes);
+            // Build final string using codepoint map to handle surrogate pairs
+            var finalStr = GetOrderedString(input, newIndexes, codePointMap);
 
             return new BidiResult
             {
@@ -152,13 +150,39 @@ namespace BidiSharp
         }
 
         // 3.2 Determine Bidi_class of each input character
-        private static void ClassifyCharacters(string text, ref byte[] typesList)
+        // Handles surrogate pairs for supplementary plane characters
+        private static void ClassifyCharacters(string text, ref byte[] typesList, out int[] codePointMap)
         {
-            typesList = new byte[text.Length];
+            // First pass: count codepoints
+            int cpCount = 0;
             for (int i = 0; i < text.Length; i++)
             {
-                int chIndex     = Convert.ToInt32(text[i]);
-                typesList[i]    = Bidi_Types.BidiCharTypes[chIndex];
+                cpCount++;
+                if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                    i++; // skip low surrogate
+            }
+
+            typesList = new byte[cpCount];
+            codePointMap = new int[cpCount]; // maps codepoint index -> char index in text
+
+            int cpIndex = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                int codePoint;
+                if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    codePoint = char.ConvertToUtf32(text[i], text[i + 1]);
+                    codePointMap[cpIndex] = i;
+                    i++; // skip low surrogate
+                }
+                else
+                {
+                    codePoint = (int)text[i];
+                    codePointMap[cpIndex] = i;
+                }
+
+                typesList[cpIndex] = Bidi_Types.GetBidiClass(codePoint);
+                cpIndex++;
             }
         }
 
@@ -341,13 +365,20 @@ namespace BidiSharp
                     case BidiClass.B:
                     {
                         // Paragraph separators.
-                        // Applied at the end of paragraph (last character in array).
 
-                        // 1 Terminate(reset) all directional embeddings, overrides and isolates 
+                        // 1 Terminate(reset) all directional embeddings, overrides and isolates
                         overflowEmbeddingCount = 0;
                         overflowIsolateCount = 0;
                         validIsolateCount = 0;
-                        dirStatusStack.Clear();     // Also pop off initialization entry
+                        dirStatusStack.Clear();
+
+                        // Re-push initial entry so subsequent characters can Peek()
+                        dirStatusStack.Push(new DirectionalStatus()
+                        {
+                            paragraphEmbeddingLevel = level,
+                            directionalOverrideStatus = (byte)BidiClass.ON,
+                            directionalIsolateStatus = false
+                        });
 
                         // 2 Assign separator character an embedding level equal to paragraph embedding level
                         levels[i] = level;
@@ -886,7 +917,7 @@ namespace BidiSharp
             return allRunsList;
         }
 
-        // Map each character to its belonging run
+        // Map each character position to its belonging run index
         private static int[] GetRunForCharacter(List<List<int>> levelRuns, int length)
         {
             int[] runCharsArray = new int[length];
@@ -895,7 +926,7 @@ namespace BidiSharp
                 for (int j = 0; j < levelRuns[i].Count; j++)
                 {
                     int chPos = levelRuns[i][j];
-                    runCharsArray[chPos] = chPos;
+                    runCharsArray[chPos] = i; // Map char position -> run index
                 }
             }
 
@@ -922,12 +953,19 @@ namespace BidiSharp
                                                lastType == BidiClass.LRI || 
                                                lastType == BidiClass.FSI;
 
-                    int lastChMatchingPDI = matchingPDI[lastCh];
-                    while (isIsolateInitiator && lastChMatchingPDI != types.Length)
+                    while (isIsolateInitiator && matchingPDI[lastCh] != types.Length)
                     {
-                        var lChRunIndex = runCharsArray[lastChMatchingPDI]; // Get run index for last character that has matchingPDI
+                        int pdiPos = matchingPDI[lastCh];
+                        var lChRunIndex = runCharsArray[pdiPos];
                         var newRun = levelRuns[lChRunIndex];
                         currRunSequence.AddRange(newRun);
+
+                        // Update for next iteration
+                        lastCh = currRunSequence[currRunSequence.Count - 1];
+                        lastType = (BidiClass)types[lastCh];
+                        isIsolateInitiator = lastType == BidiClass.RLI ||
+                                             lastType == BidiClass.LRI ||
+                                             lastType == BidiClass.FSI;
                     }
 
                     allRunSequences.Add(new IsolatingRunSequence(pLevel, currRunSequence, types, levels, text));
@@ -1182,12 +1220,25 @@ namespace BidiSharp
         }
 
         // Return final correctly reversed string order
-        private static string GetOrderedString(string input, int[] newIndexes)
+        // Build final correctly ordered string using codepoint map for surrogate pair support
+        private static string GetOrderedString(string input, int[] newIndexes, int[] codePointMap)
         {
             var sb = new StringBuilder(input.Length);
             for (int i = 0; i < newIndexes.Length; i++)
             {
-                sb.Append(input[newIndexes[i]]);
+                int cpIdx = newIndexes[i];
+                int charIdx = codePointMap[cpIdx];
+
+                // Check if this codepoint is a surrogate pair (2 chars)
+                if (char.IsHighSurrogate(input[charIdx]) && charIdx + 1 < input.Length && char.IsLowSurrogate(input[charIdx + 1]))
+                {
+                    sb.Append(input[charIdx]);
+                    sb.Append(input[charIdx + 1]);
+                }
+                else
+                {
+                    sb.Append(input[charIdx]);
+                }
             }
 
             return sb.ToString();
