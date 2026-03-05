@@ -138,7 +138,8 @@ namespace BidiSharp
             int[] newIndexes = GetReorderedIndexes(baseLevel, typesList, levelsList, lines);
 
             // Build final string using codepoint map to handle surrogate pairs
-            var finalStr = GetOrderedString(input, newIndexes, codePointMap);
+            // Also applies Rule L4 (character mirroring at RTL levels)
+            var finalStr = GetOrderedString(input, newIndexes, codePointMap, levelsList);
 
             return new BidiResult
             {
@@ -1221,7 +1222,8 @@ namespace BidiSharp
 
         // Return final correctly reversed string order
         // Build final correctly ordered string using codepoint map for surrogate pair support
-        private static string GetOrderedString(string input, int[] newIndexes, int[] codePointMap)
+        // Applies Rule L4: mirror characters at odd (RTL) resolved levels
+        private static string GetOrderedString(string input, int[] newIndexes, int[] codePointMap, byte[] levelsList)
         {
             var sb = new StringBuilder(input.Length);
             for (int i = 0; i < newIndexes.Length; i++)
@@ -1232,12 +1234,30 @@ namespace BidiSharp
                 // Check if this codepoint is a surrogate pair (2 chars)
                 if (char.IsHighSurrogate(input[charIdx]) && charIdx + 1 < input.Length && char.IsLowSurrogate(input[charIdx + 1]))
                 {
-                    sb.Append(input[charIdx]);
-                    sb.Append(input[charIdx + 1]);
+                    int codepoint = char.ConvertToUtf32(input[charIdx], input[charIdx + 1]);
+
+                    // L4: Mirror characters at odd (RTL) levels
+                    if ((levelsList[cpIdx] & 1) != 0)
+                        codepoint = BidiMirroring.GetMirror(codepoint);
+
+                    if (codepoint > 0xFFFF)
+                    {
+                        sb.Append(char.ConvertFromUtf32(codepoint));
+                    }
+                    else
+                    {
+                        sb.Append((char)codepoint);
+                    }
                 }
                 else
                 {
-                    sb.Append(input[charIdx]);
+                    int codepoint = input[charIdx];
+
+                    // L4: Mirror characters at odd (RTL) levels
+                    if ((levelsList[cpIdx] & 1) != 0)
+                        codepoint = BidiMirroring.GetMirror(codepoint);
+
+                    sb.Append((char)codepoint);
                 }
             }
 
