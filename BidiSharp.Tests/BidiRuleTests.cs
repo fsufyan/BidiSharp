@@ -369,6 +369,71 @@ namespace BidiSharp.Tests
         }
 
         #endregion
+
+        #region Additional Edge Cases
+
+        [Fact]
+        public void DeepEmbedding_AtMaxDepth_DoesNotCrash()
+        {
+            // Build a string with many nested embeddings (up to MAX_DEPTH=125)
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < 60; i++) sb.Append(LRE);
+            sb.Append("Hello");
+            for (int i = 0; i < 60; i++) sb.Append(PDF);
+            string result = V(sb.ToString());
+            Assert.NotNull(result);
+        }
+
+        [Fact]
+        public void OverflowEmbedding_BeyondMaxDepth_DoesNotCrash()
+        {
+            // Exceed MAX_DEPTH — should handle gracefully via overflow counters
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < 130; i++) sb.Append(RLE);
+            sb.Append("Test");
+            for (int i = 0; i < 130; i++) sb.Append(PDF);
+            string result = V(sb.ToString());
+            Assert.NotNull(result);
+        }
+
+        [Fact]
+        public void MixedIsolatesAndEmbeddings()
+        {
+            string input = $"A{LRI}B{RLI}{ALEF}{PDI}C{PDI}D";
+            string result = V(input);
+            Assert.NotNull(result);
+            Assert.Equal(input.Length, result.Length);
+        }
+
+        [Fact]
+        public void ParagraphDirection_ExplicitLTR()
+        {
+            // Force LTR even with RTL content
+            string input = $"{ALEF}{BET}{GIMEL}";
+            var result = Bidi.ResolveAndReorder(input, null, 0);
+            Assert.Equal(0, result.ParagraphEmbeddingLevel);
+        }
+
+        [Fact]
+        public void ParagraphDirection_ExplicitRTL()
+        {
+            // Force RTL even with LTR content
+            string input = "Hello";
+            var result = Bidi.ResolveAndReorder(input, null, 1);
+            Assert.Equal(1, result.ParagraphEmbeddingLevel);
+        }
+
+        [Fact]
+        public void AllNeutrals_ResolveToEmbeddingDirection()
+        {
+            // String with only neutrals — should resolve to paragraph embedding direction
+            string input = "...!!!???";
+            string result = V(input);
+            Assert.Equal(input, result);
+        }
+
+        #endregion
+
         #region Known Bug Exposure Tests
 
         [Fact]
