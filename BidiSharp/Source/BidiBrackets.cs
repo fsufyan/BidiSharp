@@ -1,6 +1,6 @@
 /*
-    BidiBrackets data from Unicode 16.0.0
-    Generated from BidiBrackets-16.0.0.txt
+    BidiBrackets data — auto-generated from Unicode 16.0.0 BidiBrackets.txt
+    DO NOT EDIT MANUALLY — regenerate using tools/GenerateBidiTypes
 */
 
 using System.Collections.Generic;
