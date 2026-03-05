@@ -12,10 +12,12 @@ using System.Text;
 /// Input files (from Unicode 16.0.0 UCD):
 ///   - DerivedBidiClass.txt: Bidi class assignments for all codepoints
 ///   - BidiBrackets.txt: Paired bracket data
+///   - BidiMirroring.txt: Bidi mirroring glyph pairs
 ///
 /// Output files:
 ///   - Bidi_types.cs: BMP flat array + supplementary plane ranges
 ///   - BidiBrackets.cs: Bracket pair lookup dictionary
+///   - BidiMirroring.cs: Mirror glyph lookup dictionary
 /// </summary>
 class Program
 {
@@ -34,6 +36,7 @@ class Program
         string derivedBidiClassFile = args.Length > 0 ? args[0] : "DerivedBidiClass.txt";
         string bidiBracketsFile    = args.Length > 1 ? args[1] : "BidiBrackets.txt";
         string outputDir           = args.Length > 2 ? args[2] : ".";
+        string bidiMirroringFile   = args.Length > 3 ? args[3] : "BidiMirroring.txt";
 
         Console.WriteLine($"Reading {derivedBidiClassFile}...");
         var bidiClasses = ParseDerivedBidiClass(derivedBidiClassFile);
@@ -46,6 +49,13 @@ class Program
             Console.WriteLine($"Reading {bidiBracketsFile}...");
             Console.WriteLine($"Generating BidiBrackets.cs...");
             GenerateBidiBrackets(bidiBracketsFile, Path.Combine(outputDir, "BidiBrackets.cs"));
+        }
+
+        if (File.Exists(bidiMirroringFile))
+        {
+            Console.WriteLine($"Reading {bidiMirroringFile}...");
+            Console.WriteLine($"Generating BidiMirroring.cs...");
+            GenerateBidiMirroring(bidiMirroringFile, Path.Combine(outputDir, "BidiMirroring.cs"));
         }
 
         Console.WriteLine("Done.");
@@ -277,5 +287,60 @@ namespace BidiSharp
 
         File.WriteAllText(outputPath, sb.ToString());
         Console.WriteLine($"  Wrote {outputPath}");
+    }
+
+    static void GenerateBidiMirroring(string inputPath, string outputPath)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(@"/*
+    BidiMirroring data — auto-generated from Unicode 16.0.0 BidiMirroring.txt
+    DO NOT EDIT MANUALLY — regenerate using tools/GenerateBidiTypes
+*/
+
+using System.Collections.Generic;
+
+namespace BidiSharp
+{
+    internal static class BidiMirroring
+    {
+        // Lookup: codepoint -> mirrored glyph codepoint
+        internal static readonly Dictionary<int, int> Data = new Dictionary<int, int>
+        {");
+
+        int count = 0;
+        foreach (var line in File.ReadLines(inputPath))
+        {
+            if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
+                continue;
+
+            int commentIdx = line.IndexOf('#');
+            string comment = commentIdx >= 0 ? line.Substring(commentIdx + 1).Trim() : "";
+            string data = commentIdx >= 0 ? line.Substring(0, commentIdx) : line;
+            data = data.Trim();
+            if (string.IsNullOrEmpty(data)) continue;
+
+            var parts = data.Split(';');
+            if (parts.Length < 2) continue;
+
+            string cp = parts[0].Trim();
+            string mirror = parts[1].Trim();
+
+            sb.AppendLine($"            {{ 0x{cp}, 0x{mirror} }}, // {comment}");
+            count++;
+        }
+
+        sb.AppendLine(@"        };
+
+        // Get the mirrored glyph for a codepoint, or the codepoint itself if no mirror exists
+        internal static int GetMirror(int codepoint)
+        {
+            return Data.TryGetValue(codepoint, out int mirror) ? mirror : codepoint;
+        }
+    }
+}");
+
+        File.WriteAllText(outputPath, sb.ToString());
+        Console.WriteLine($"  Wrote {outputPath}");
+        Console.WriteLine($"  Mirror pairs: {count}");
     }
 }
