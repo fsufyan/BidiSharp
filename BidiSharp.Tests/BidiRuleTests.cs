@@ -331,6 +331,56 @@ namespace BidiSharp.Tests
 
         #endregion
 
+        #region L4 Character Mirroring
+
+        [Fact]
+        public void L4_BracketsInRTLParagraph_AreMirrored()
+        {
+            // "عربي (hello) a" — RTL paragraph
+            // Brackets at RTL level should be mirrored so they appear correct visually
+            string input = $"{ARABIC_ALEF}{ARABIC_BA} (hello) a";
+            string result = V(input);
+            // The visual output should contain (hello) not )hello(
+            Assert.Contains("(hello)", result);
+        }
+
+        [Fact]
+        public void L4_BracketsInLTRParagraph_NotMirrored()
+        {
+            // LTR paragraph — brackets at even level should not be mirrored
+            string input = "(hello)";
+            string result = V(input);
+            Assert.Equal("(hello)", result);
+        }
+
+        [Fact]
+        public void L4_BracketsAroundRTLInRTLParagraph_AreMirrored()
+        {
+            // "عربي (نص) عربي" — RTL paragraph with brackets around RTL text
+            // Brackets should be mirrored: logical ( becomes visual ) and vice versa
+            // Visual result should be: يبرع )صن( يبرع  — but with mirroring applied
+            // the ) displays as ( and ( displays as ), so it looks correct: يبرع (صن) يبرع
+            string input = "\u0639\u0631\u0628\u064A (\u0646\u0635) \u0639\u0631\u0628\u064A";
+            string result = V(input);
+            // After reordering + mirroring, brackets should appear correct
+            int openIdx = result.IndexOf('(');
+            int closeIdx = result.IndexOf(')');
+            Assert.True(openIdx >= 0 && closeIdx >= 0, "Both brackets should be present");
+            Assert.True(openIdx < closeIdx, "Opening bracket should appear before closing bracket visually");
+        }
+
+        [Fact]
+        public void L4_AngleBracketsInRTL_AreMirrored()
+        {
+            // < and > should be mirrored at RTL levels
+            string input = $"{ALEF}<X>{BET}";
+            string result = V(input);
+            // In RTL, < becomes > and > becomes < after mirroring
+            Assert.Contains("<X>", result);
+        }
+
+        #endregion
+
         #region Supplementary Plane Characters
 
         [Fact]
