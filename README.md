@@ -2,6 +2,8 @@
 
 A free C# implementation of the Unicode Bidirectional Algorithm ([UAX #9](https://www.unicode.org/reports/tr9/)).
 
+[![CI](https://github.com/fsufyan/BidiSharp/actions/workflows/ci.yml/badge.svg?branch=unicode-16)](https://github.com/fsufyan/BidiSharp/actions/workflows/ci.yml)
+
 ## Background
 
 Responsible for supporting text bidirectionality — ordering and positioning of texts containing mixed right-to-left and left-to-right scripts, such as Latin + Arabic or Hebrew.
