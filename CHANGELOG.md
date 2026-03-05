@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.1
+
+### Added
+- **Rule L4**: Character mirroring — brackets and other paired characters (e.g. `()`, `<>`, `{}`) are now correctly mirrored at RTL levels
+- **BidiMirroring data**: 428 mirror pairs from Unicode 16.0 `BidiMirroring.txt`
+
 ## v1.0.0 — Unicode 16.0
 
 Major update bringing full Unicode 16.0 conformance.
