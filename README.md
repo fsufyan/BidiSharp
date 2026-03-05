@@ -13,6 +13,7 @@ Similar to [ICU](http://icu-project.org) and [FriBidi](https://github.com/fribid
 - **Unicode 16.0** — UAX #9 revision 51
 - Full BMP and supplementary plane support (U+0000–U+10FFFF)
 - Rule N0 (Paired Brackets Algorithm / BD16)
+- Rule L4 (Character Mirroring for brackets and paired characters at RTL levels)
 - 99.9%+ pass rate on the official `BidiCharacterTest.txt` conformance suite
 
 ## Usage
@@ -44,7 +45,7 @@ Character data can be regenerated from the Unicode Character Database using the 
 
 ```bash
 cd tools/GenerateBidiTypes
-dotnet run -- DerivedBidiClass.txt BidiBrackets.txt ../../BidiSharp/Source
+dotnet run -- DerivedBidiClass.txt BidiBrackets.txt BidiMirroring.txt ../../BidiSharp/Source
 ```
 
-Download the UCD files from https://www.unicode.org/Public/16.0.0/ucd/.
+Download the UCD files (`DerivedBidiClass.txt`, `BidiBrackets.txt`, `BidiMirroring.txt`) from https://www.unicode.org/Public/16.0.0/ucd/.
