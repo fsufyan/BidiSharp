@@ -2,6 +2,16 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <Version>0.2.0</Version>
+    <PackageId>BidiSharp</PackageId>
+    <Authors>fsufyan</Authors>
+    <Description>A C# implementation of the Unicode Bidirectional Algorithm (UAX #9) for ordering mixed right-to-left and left-to-right text. This version supports Unicode 6.3.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/fsufyan/BidiSharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/fsufyan/BidiSharp.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>bidi;bidirectional;unicode;rtl;arabic;hebrew;uax9</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
 
 </Project>
