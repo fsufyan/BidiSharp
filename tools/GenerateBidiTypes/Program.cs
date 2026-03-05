@@ -7,7 +7,7 @@ using System.Text;
 /// <summary>
 /// Generates BidiSharp source files from Unicode Character Database files.
 ///
-/// Usage: dotnet run -- [DerivedBidiClass.txt] [BidiBrackets.txt] [OutputDir]
+/// Usage: dotnet run -- [DerivedBidiClass.txt] [BidiBrackets.txt] [BidiMirroring.txt] [OutputDir]
 ///
 /// Input files (from Unicode 16.0.0 UCD):
 ///   - DerivedBidiClass.txt: Bidi class assignments for all codepoints
@@ -35,8 +35,8 @@ class Program
     {
         string derivedBidiClassFile = args.Length > 0 ? args[0] : "DerivedBidiClass.txt";
         string bidiBracketsFile    = args.Length > 1 ? args[1] : "BidiBrackets.txt";
-        string outputDir           = args.Length > 2 ? args[2] : ".";
-        string bidiMirroringFile   = args.Length > 3 ? args[3] : "BidiMirroring.txt";
+        string bidiMirroringFile   = args.Length > 2 ? args[2] : "BidiMirroring.txt";
+        string outputDir           = args.Length > 3 ? args[3] : ".";
 
         Console.WriteLine($"Reading {derivedBidiClassFile}...");
         var bidiClasses = ParseDerivedBidiClass(derivedBidiClassFile);
